@@ -33,20 +33,21 @@ class RBM(nn.Module):
         self.visible_units = visible_units
         self.hidden_units = hidden_units
         self.k = k
+        self.increase_to_cd_k = increase_to_cd_k
         self.learning_rate = learning_rate
         self.learning_rate_decay = learning_rate_decay
-        self.increase_to_cd_k = increase_to_cd_k
         self.batch_size = batch_size
         self.device = device
+        
 
         self.activation = torch.nn.Sigmoid()
-        self.activation_name = self.activation.__class__.__name__
+        self.activation_name = self.activation.__class__.__name__.lower()
         self.weight = nn.Parameter(torch.rand(
             self.visible_units, self.hidden_units, device=self.device))
         self.v_bias = nn.Parameter(torch.rand(self.visible_units,
-                                                device=self.device))
+                                              device=self.device))
         self.h_bias = nn.Parameter(torch.rand(self.hidden_units,
-                                                device=self.device))
+                                              device=self.device))
 
         self.reset_parameters()
 
@@ -142,7 +143,7 @@ class RBM(nn.Module):
             lr: Learning rate in RBM.
 
         Returns: 1. error: Reconstruction mse error.
-                 2.
+                 2. gradient update value.
 
 
         """
@@ -178,9 +179,12 @@ class RBM(nn.Module):
             h_bias_update = torch.sum(positive_hid_prob - negative_hid_prob,
                                       dim=0) / batch_size
 
-            self.W += lr * grad_update
-            self.v_bias += lr * v_bias_update
-            self.h_bias += lr * h_bias_update
+            # Attention: While applying in-place operation to a leaf Variable,
+            # .data should be added.
+            
+            self.weight.data += lr * grad_update
+            self.v_bias.data += lr * v_bias_update
+            self.h_bias.data += lr * h_bias_update
 
         # Compute reconstruction mse error
         error = torch.mean(torch.sum(
@@ -205,8 +209,7 @@ class RBM(nn.Module):
         """
         # Gibbs_sampling step gradually increases to k as the train processes.
         if self.increase_to_cd_k:
-            n_gibbs_sampling_steps = int(math.ceil((epoch_i / epoch) *
-                                                   self.k))
+            n_gibbs_sampling_steps = int(math.ceil((epoch_i / epoch) * self.k))
         else:
             n_gibbs_sampling_steps = self.k
 
@@ -214,8 +217,7 @@ class RBM(nn.Module):
             lr = self.learning_rate / epoch_i
         else:
             lr = self.learning_rate
-        return self.contrastive_divergence(input_data, True,
-                                           n_gibbs_sampling_steps, lr)
+        return self.contrastive_divergence(input_data, True, n_gibbs_sampling_steps, lr)
 
     def train_rbm(self, train_dataloader, epoch=50):
         """
@@ -243,9 +245,7 @@ class RBM(nn.Module):
             # Train_loader contains input and output data. However, training
             # of RBM doesn't require output data.
             for i, batch in enumerate(train_loader):
-                cost_[i - 1], grad_[i - 1] = self.step(
-                    batch, epoch_i, epoch)
-
+                cost_[i - 1], grad_[i - 1] = self.step(batch[0], epoch_i, epoch)
             print('Epoch:{0}/{1} -rbm_train_loss: {2:.3f}'.format(
                 epoch_i, epoch, torch.mean(cost_)))
 

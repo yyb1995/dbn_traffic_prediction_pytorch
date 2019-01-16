@@ -34,10 +34,26 @@ class DBN(nn.Module):
 
             self.rbm_layers.append(rbm)
 
+        self.W_rec = [nn.Parameter(self.rbm_layers[i].weight.data.clone()) for i in
+                      range(self.n_layers - 1)]
+        self.W_gen = [nn.Parameter(self.rbm_layers[i].weight.data) for i in
+                      range(self.n_layers - 1)]
+        self.bias_rec = [nn.Parameter(self.rbm_layers[i].h_bias.data.clone())
+                         for i in range(self.n_layers - 1)]
+        self.bias_gen = [nn.Parameter(self.rbm_layers[i].v_bias.data) for i in
+                         range(self.n_layers - 1)]
+        self.W_mem = nn.Parameter(self.rbm_layers[-1].weight.data)
+        self.v_bias_mem = nn.Parameter(self.rbm_layers[-1].v_bias.data)
+        self.h_bias_mem = nn.Parameter(self.rbm_layers[-1].h_bias.data)
+
+        for i in range(self.n_layers - 1):
+            self.register_parameter('W_rec%i' % i, self.W_rec[i])
+            self.register_parameter('W_gen%i' % i, self.W_gen[i])
+            self.register_parameter('bias_rec%i' % i, self.bias_rec[i])
+            self.register_parameter('bias_gen%i' % i, self.bias_gen[i])
+
         self.bpnn = nn.Sequential(
-            torch.nn.Linear(hidden_units[-1], ouptut_units),
-            torch.nn.Tanh()
-        )
+            torch.nn.Linear(hidden_units[-1], ouptut_units), torch.nn.Sigmoid()).to(self.device)
 
     def forward(self, input_data):
         """
@@ -100,8 +116,7 @@ class DBN(nn.Module):
             print("Training rbm layer {}.".format(i + 1))
 
             dataset_i = TensorDataset(hid_output_i)
-            dataloader_i = DataLoader(
-                dataset_i, batch_size=batch_size, drop_last=False)
+            dataloader_i = DataLoader(dataset_i, batch_size=batch_size, drop_last=False)
 
             self.rbm_layers[i].train_rbm(dataloader_i, epoch)
             hid_output_i, _ = self.rbm_layers[i].forward(hid_output_i)
@@ -132,14 +147,28 @@ class DBN(nn.Module):
             hid_output_i, _ = self.rbm_layers[ith].forward(hid_output_i)
 
         dataset_i = TensorDataset(hid_output_i)
-        dataloader_i = DataLoader(
-            dataset_i, batch_size=batch_size, drop_last=False)
+        dataloader_i = DataLoader(dataset_i, batch_size=batch_size, drop_last=False)
 
         self.rbm_layers[ith_layer].train_rbm(dataloader_i, epoch)
         hid_output_i, _ = self.rbm_layers[ith_layer].forward(hid_output_i)
         return
 
     def finetune(self, x, y, epoch, batch_size, loss_function, shuffle=True):
+        """
+        Fine-tune the train dataset.
+
+        Args:
+            x:
+            y:
+            epoch:
+            batch_size:
+            loss_function:
+            shuffle:
+
+        Returns:
+
+        """
+
         if not self.is_pretrained:
             warnings.warn("Hasn't pretrained DBN model yet. Recommend "
                           "run self.pretrain() first.", RuntimeWarning)
@@ -155,16 +184,16 @@ class DBN(nn.Module):
                 total_loss = 0
 
                 input_data, ground_truth = batch
+                input_data = input_data.to(self.device)
+                ground_truth = ground_truth.to(self.device)
                 output = self.forward(input_data)
-
                 optimizer.zero_grad()
-                loss = loss_function(input_data, output)
+                loss = loss_function(ground_truth, output)
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
 
-            print('Epoch:{0}/{1} -rbm_train_loss: {2:.3f}'.format(
-                epoch_i, epoch, total_loss))
+            print('Epoch:{0}/{1} -rbm_train_loss: {2:.3f}'.format(epoch_i, epoch, total_loss))
 
         self.is_finetune = True
 
@@ -191,17 +220,17 @@ class DBN(nn.Module):
         if not self.is_pretrained:
             warnings.warn("Hasn't finetuned DBN model yet. Recommend "
                           "run self.finetune() first.", RuntimeWarning)
-        y_list = []
+        y_predict = torch.tensor([])
 
         x_tensor = torch.tensor(x, dtype=torch.float, device=self.device)
         dataset = TensorDataset(x_tensor)
         dataloader = DataLoader(dataset, batch_size, shuffle)
         with torch.no_grad():
             for batch in dataloader:
-                y = self.forward(batch)
-                y_list.append(y.cpu())
+                y = self.forward(batch[0])
+                y_predict = torch.cat((y_predict, y.cpu()), 0)
 
-        return torch.stack(y_list)
+        return y_predict.flatten()
 
 
 class FineTuningDataset(Dataset):
