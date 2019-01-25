@@ -7,12 +7,12 @@ from sklearn.preprocessing import *
 
 # Set parameter
 # data
-input_length = 100
+input_length = 50
 output_length = 1
 test_percentage = 0.2
 
 # network
-hidden_units = [128, 64]
+hidden_units = [128, 128]
 device = 'cuda'
 
 if device == 'cuda':
@@ -22,8 +22,8 @@ if device == 'cuda':
 
 # train & predict
 batch_size = 32
-epoch_pretrain = 200
-epoch_finetune = 200
+epoch_pretrain = 300
+epoch_finetune = 500
 loss_function = torch.nn.MSELoss()
 
 # Generate input and output data
@@ -48,8 +48,6 @@ dbn = DBN(hidden_units, input_length, output_length, device=device)
 dbn.pretrain(x_train, epoch=epoch_pretrain, batch_size=batch_size)
 dbn.finetune(x_train, y_train, epoch_finetune, batch_size, loss_function)
 y_predict = dbn.predict(x_test, batch_size)
-print(y_test)
-print(y_predict)
-
-
+print(scaler.inverse_transform(y_test.reshape(-1, 1)).flatten())
+print(scaler.inverse_transform(y_predict.reshape(-1, 1)).flatten())
 
