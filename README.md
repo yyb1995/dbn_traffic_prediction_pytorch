@@ -1,4 +1,4 @@
-# Deep-Belief-Network-pytorch
+# dbn_traffic_prediction_pytorch
 ## Introduction
 This is a DBN regression model for sine wave prediction. The model is implemented in Pytorch 1.0.1.
 
