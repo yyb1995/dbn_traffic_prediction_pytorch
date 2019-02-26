@@ -38,7 +38,6 @@ class RBM(nn.Module):
         self.learning_rate_decay = learning_rate_decay
         self.batch_size = batch_size
         self.device = device
-        
 
         self.activation = torch.nn.Sigmoid()
         self.activation_name = self.activation.__class__.__name__.lower()

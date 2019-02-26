@@ -5,11 +5,11 @@ import numpy as np
 
 from RBM import RBM
 from torch.utils.data import TensorDataset, DataLoader, Dataset
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 
 
 class DBN(nn.Module):
-    def __init__(self, hidden_units, visible_units=256, ouptut_units=1, k=2,
+    def __init__(self, hidden_units, visible_units=256, output_units=1, k=2,
                  learning_rate=1e-5, learning_rate_decay=False,
                  increase_to_cd_k=False, device='cpu'):
         super(DBN, self).__init__()
@@ -34,26 +34,14 @@ class DBN(nn.Module):
 
             self.rbm_layers.append(rbm)
 
-        self.W_rec = [nn.Parameter(self.rbm_layers[i].weight.data.clone()) for i in
-                      range(self.n_layers - 1)]
-        self.W_gen = [nn.Parameter(self.rbm_layers[i].weight.data) for i in
-                      range(self.n_layers - 1)]
-        self.bias_rec = [nn.Parameter(self.rbm_layers[i].h_bias.data.clone())
-                         for i in range(self.n_layers - 1)]
-        self.bias_gen = [nn.Parameter(self.rbm_layers[i].v_bias.data) for i in
-                         range(self.n_layers - 1)]
-        self.W_mem = nn.Parameter(self.rbm_layers[-1].weight.data)
-        self.v_bias_mem = nn.Parameter(self.rbm_layers[-1].v_bias.data)
-        self.h_bias_mem = nn.Parameter(self.rbm_layers[-1].h_bias.data)
+        self.W_rec = [self.rbm_layers[i].weight for i in range(self.n_layers)]
+        self.bias_rec = [self.rbm_layers[i].h_bias for i in range(self.n_layers)]
 
-        for i in range(self.n_layers - 1):
+        for i in range(self.n_layers):
             self.register_parameter('W_rec%i' % i, self.W_rec[i])
-            self.register_parameter('W_gen%i' % i, self.W_gen[i])
             self.register_parameter('bias_rec%i' % i, self.bias_rec[i])
-            self.register_parameter('bias_gen%i' % i, self.bias_gen[i])
 
-        self.bpnn = nn.Sequential(
-            torch.nn.Linear(hidden_units[-1], ouptut_units), torch.nn.Sigmoid()).to(self.device)
+        self.bpnn = torch.nn.Linear(hidden_units[-1], output_units).to(self.device)
 
     def forward(self, input_data):
         """
@@ -67,7 +55,7 @@ class DBN(nn.Module):
 
         """
         v = input_data.to(self.device)
-        hid_output = torch.zeros(v.shape, dtype=torch.float, device=self.device)
+        hid_output = v.clone()
         for i in range(len(self.rbm_layers)):
             hid_output, _ = self.rbm_layers[i].to_hidden(hid_output)
         output = self.bpnn(hid_output)
@@ -153,17 +141,18 @@ class DBN(nn.Module):
         hid_output_i, _ = self.rbm_layers[ith_layer].forward(hid_output_i)
         return
 
-    def finetune(self, x, y, epoch, batch_size, loss_function, shuffle=True):
+    def finetune(self, x, y, epoch, batch_size, loss_function, optimizer, shuffle=False):
         """
         Fine-tune the train dataset.
 
         Args:
-            x:
-            y:
-            epoch:
-            batch_size:
-            loss_function:
-            shuffle:
+            x: Input data
+            y: Target data
+            epoch: Fine-tuning epoch
+            batch_size: Train batch size
+            loss_function: Train loss function
+            optimizer: Finetune optimizer
+            shuffle: True if shuffle train data
 
         Returns:
 
@@ -173,27 +162,31 @@ class DBN(nn.Module):
             warnings.warn("Hasn't pretrained DBN model yet. Recommend "
                           "run self.pretrain() first.", RuntimeWarning)
 
-        optimizer = Adam(self.parameters())
-
         dataset = FineTuningDataset(x, y)
         dataloader = DataLoader(dataset, batch_size, shuffle=shuffle)
 
         print('Begin fine-tuning.')
         for epoch_i in range(1, epoch + 1):
+            total_loss = 0
             for batch in dataloader:
-                total_loss = 0
-
                 input_data, ground_truth = batch
                 input_data = input_data.to(self.device)
                 ground_truth = ground_truth.to(self.device)
                 output = self.forward(input_data)
-                optimizer.zero_grad()
                 loss = loss_function(ground_truth, output)
+                # print(list(self.parameters()))
+                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
 
-            print('Epoch:{0}/{1} -rbm_train_loss: {2:.3f}'.format(epoch_i, epoch, total_loss))
+            # Display train information
+            if total_loss >= 1e-4:
+                disp = '{2:.4f}'
+            else:
+                disp = '{2:.3e}'
+
+            print(('Epoch:{0}/{1} -rbm_train_loss: ' + disp).format(epoch_i, epoch, total_loss))
 
         self.is_finetune = True
 
